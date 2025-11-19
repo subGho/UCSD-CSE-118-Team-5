@@ -3,39 +3,38 @@
     "languageModel": {
       "intents": [
         {
-          "slots": [
-            {
-              "name": "q",
-              "type": "AMAZON.SearchQuery"
-            }
-          ],
-          "name": "FreeQueryIntent",
+          "slots": [],
+          "name": "GetCalendarSummaryIntent",
           "samples": [
-            "my question is {q}",
-            "please answer {q}",
-            "explain {q}",
-            "tell me about {q}",
-            "help with {q}",
-            "search for {q}",
-            "give me advice on {q}",
-            "summarize {q}"
+            "give me my schedule summary",
+            "summarize my calendar",
+            "what\u0027s on my schedule",
+            "what\u0027s on my calendar today"
           ]
         },
         {
-          "name": "AMAZON.FallbackIntent"
+          "name": "AMAZON.CancelIntent",
+          "samples": []
         },
         {
-          "name": "AMAZON.HelpIntent"
+          "name": "AMAZON.HelpIntent",
+          "samples": []
         },
         {
-          "name": "AMAZON.CancelIntent"
+          "name": "AMAZON.StopIntent",
+          "samples": []
         },
         {
-          "name": "AMAZON.StopIntent"
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
         }
       ],
       "types": [],
-      "invocationName": "gemini relay"
+      "invocationName": "calendar summary"
     }
   }
 }

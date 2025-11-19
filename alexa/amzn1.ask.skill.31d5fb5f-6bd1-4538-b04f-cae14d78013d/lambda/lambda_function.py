@@ -1,156 +1,144 @@
-import os, logging, json, re
-import ask_sdk_core.utils as ask_utils
+import json
+import logging
+import urllib.request
+import urllib.error
+
 from ask_sdk_core.skill_builder import SkillBuilder
-from ask_sdk_core.dispatch_components import AbstractRequestHandler, AbstractExceptionHandler
+from ask_sdk_core.utils import is_request_type, is_intent_name
 from ask_sdk_core.handler_input import HandlerInput
 from ask_sdk_model import Response
 from key import GEMINI_API_KEY
 
-import urllib.request
-import urllib.error
-
+sb = SkillBuilder()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
-TIMEOUT_SEC = 6  # keep it tight so Alexa can respond under the ~8s total window
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+)
 
+# -----------------------------
+# Hardcoded text-based calendar
+# -----------------------------
+CALENDAR_TEXT = """
+TODAY
+- 10:00 AM – SWE Board Meeting
+- 2:00 PM – CSE 118 Lecture
+- 3:30 PM – CSE 118 Lab
+- 5:00 PM – Study Session
 
-def call_gemini(prompt: str) -> str:
+"""
+
+# ---------------------------------------------------------
+# Gemini: Summarize Calendar
+# ---------------------------------------------------------
+def summarize_calendar_with_gemini():
     if not GEMINI_API_KEY:
-        return "Gemini API key is not configured."
+        logger.error("Gemini API key missing.")
+        return "Your schedule summary is unavailable because the API key is missing."
 
-    payload = {
+    prompt = (
+        "You are an assistant that summarizes schedules. "
+        "Given the following day calendar, create a clear, friendly spoken summary "
+        "of the main events, commitments, and patterns. Keep it short and natural.\n\n"
+        f"{CALENDAR_TEXT}"
+    )
+
+    body = {
         "contents": [
-            {"parts": [{"text": prompt}]}
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
         ],
-        "generationConfig": {"maxOutputTokens": 350}
     }
 
-    data = json.dumps(payload).encode("utf-8")
-    url = f"{GEMINI_ENDPOINT}?key={GEMINI_API_KEY}"
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(
+        GEMINI_URL,
+        data=data,
+        headers={"Content-Type": "application/json"}
+    )
 
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            cand = body.get("candidates", [{}])[0]
-            parts = cand.get("content", {}).get("parts", [])
-            text = ""
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
 
-            for p in parts:
-                if "text" in p:
-                    text += p["text"]
+        logger.info("Gemini payload: %s", payload)
 
-            if not text:
-                text = "I didn’t receive any content from Gemini."
+        # Extract response text
+        candidates = payload.get("candidates", [])
+        if candidates:
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            if parts and "text" in parts[0]:
+                return parts[0]["text"].strip()
 
-            return sanitize_for_ssml(text)
-
-    except urllib.error.HTTPError as e:
-        logger.error(f"Gemini HTTPError: {e.read().decode('utf-8', errors='ignore')}")
-        return "Gemini returned an error."
+        return "I couldn't summarize your schedule."
 
     except Exception as e:
-        logger.exception("Gemini request failed")
-        return "I couldn’t reach Gemini."
+        logger.exception("Gemini request failed: %s", e)
+        return "I couldn't retrieve your schedule summary due to an error."
 
 
-def sanitize_for_ssml(text: str) -> str:
-    text = re.sub(r"[<>&]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:7000]
+# ---------------------------------------------------------
+# Alexa Handlers
+# ---------------------------------------------------------
+
+@sb.request_handler(can_handle_func=is_request_type("LaunchRequest"))
+def launch_request_handler(handler_input: HandlerInput):
+    summary = summarize_calendar_with_gemini()
+    return (
+        handler_input.response_builder
+        .speak(summary)
+        .set_should_end_session(True)
+        .response
+    )
 
 
-class LaunchRequestHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return ask_utils.is_request_type("LaunchRequest")(handler_input)
-
-    def handle(self, handler_input):
-        speak = "What would you like me to ask Gemini?"
-        return handler_input.response_builder.speak(speak).ask(speak).response
-
-
-class FreeQueryIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return ask_utils.is_intent_name("FreeQueryIntent")(handler_input)
-
-    def handle(self, handler_input):
-        intent = handler_input.request_envelope.request.intent
-        q_slot = intent.slots.get("q") if intent and intent.slots else None
-        user_query = q_slot.value if q_slot and q_slot.value else None
-
-        if not user_query:
-            speak = "What should I send to Gemini?"
-            return handler_input.response_builder.speak(speak).ask(speak).response
-
-        reply = call_gemini(user_query)
-        keep_open = len(reply) < 600
-
-        rb = handler_input.response_builder.speak(reply)
-        if keep_open:
-            rb = rb.ask("Would you like to ask Gemini anything else?")
-
-        return rb.response
+@sb.request_handler(can_handle_func=is_intent_name("AMAZON.HelpIntent"))
+def help_handler(handler_input):
+    speak_output = "This skill summarizes your weekly schedule."
+    return (
+        handler_input.response_builder
+        .speak(speak_output)
+        .ask(speak_output)
+        .response
+    )
 
 
-class FallbackIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return ask_utils.is_intent_name("AMAZON.FallbackIntent")(handler_input)
-
-    def handle(self, handler_input):
-        speak = "Tell me what to send to Gemini."
-        return handler_input.response_builder.speak(speak).ask(speak).response
-
-
-class HelpIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return ask_utils.is_intent_name("AMAZON.HelpIntent")(handler_input)
-
-    def handle(self, handler_input):
-        speak = (
-            "Say, ask gemini followed by your question. "
-            "For example, ask gemini to write a short poem about space."
-        )
-        return handler_input.response_builder.speak(speak).ask("What should I send?").response
+@sb.request_handler(
+    can_handle_func=lambda h:
+        is_intent_name("AMAZON.StopIntent")(h) or
+        is_intent_name("AMAZON.CancelIntent")(h)
+)
+def stop_handler(handler_input):
+    return handler_input.response_builder.speak("Goodbye!").set_should_end_session(True).response
 
 
-class CancelOrStopIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return (
-            ask_utils.is_intent_name("AMAZON.CancelIntent")(handler_input)
-            or ask_utils.is_intent_name("AMAZON.StopIntent")(handler_input)
-        )
-
-    def handle(self, handler_input):
-        return handler_input.response_builder.speak("Goodbye.").response
+@sb.request_handler(can_handle_func=is_intent_name("AMAZON.FallbackIntent"))
+def fallback_handler(handler_input):
+    speak_output = "Sorry, I didn't understand. Try opening the schedule again."
+    return handler_input.response_builder.speak(speak_output).ask(speak_output).response
 
 
-class SessionEndedRequestHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input):
-        return ask_utils.is_request_type("SessionEndedRequest")(handler_input)
-
-    def handle(self, handler_input):
-        return handler_input.response_builder.response
+@sb.request_handler(can_handle_func=is_request_type("SessionEndedRequest"))
+def session_ended_handler(handler_input):
+    return handler_input.response_builder.response
 
 
-class CatchAllExceptionHandler(AbstractExceptionHandler):
-    def can_handle(self, handler_input, exception):
-        return True
-
-    def handle(self, handler_input, exception):
-        logger.exception("Unhandled error")
-        speak = "Sorry, something went wrong."
-        return handler_input.response_builder.speak(speak).ask("Try again?").response
-
-
-sb = SkillBuilder()
-sb.add_request_handler(LaunchRequestHandler())
-sb.add_request_handler(FreeQueryIntentHandler())
-sb.add_request_handler(HelpIntentHandler())
-sb.add_request_handler(CancelOrStopIntentHandler())
-sb.add_request_handler(FallbackIntentHandler())
-sb.add_request_handler(SessionEndedRequestHandler())
-sb.add_exception_handler(CatchAllExceptionHandler())
+@sb.exception_handler(can_handle_func=lambda i, e: True)
+def generic_exception_handler(handler_input, exception):
+    logger.exception(f"Unhandled exception: {exception}")
+    return (
+        handler_input.response_builder
+        .speak("Sorry, something went wrong.")
+        .set_should_end_session(True)
+        .response
+    )
 
 lambda_handler = sb.lambda_handler()
