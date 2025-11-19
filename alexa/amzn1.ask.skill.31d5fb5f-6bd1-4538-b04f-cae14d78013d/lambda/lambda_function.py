@@ -1,5 +1,6 @@
 # lambda_function.py
 import os, logging, json, re
+import GEMINI_API_KEY from key
 import ask_sdk_core.utils as ask_utils
 from ask_sdk_core.skill_builder import SkillBuilder
 from ask_sdk_core.dispatch_components import AbstractRequestHandler, AbstractExceptionHandler
@@ -13,7 +14,6 @@ import urllib.error
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-GEMINI_API_KEY = "AIzaSyDIz8u9hBKBAKqesi7jSZ5SeT_bJVNG_TY"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 TIMEOUT_SEC = 6  # keep it tight so Alexa can respond under the ~8s total window
 
