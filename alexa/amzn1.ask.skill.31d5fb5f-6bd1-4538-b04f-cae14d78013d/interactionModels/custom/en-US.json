@@ -1,0 +1,41 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "intents": [
+        {
+          "slots": [
+            {
+              "name": "q",
+              "type": "AMAZON.SearchQuery"
+            }
+          ],
+          "name": "FreeQueryIntent",
+          "samples": [
+            "my question is {q}",
+            "please answer {q}",
+            "explain {q}",
+            "tell me about {q}",
+            "help with {q}",
+            "search for {q}",
+            "give me advice on {q}",
+            "summarize {q}"
+          ]
+        },
+        {
+          "name": "AMAZON.FallbackIntent"
+        },
+        {
+          "name": "AMAZON.HelpIntent"
+        },
+        {
+          "name": "AMAZON.CancelIntent"
+        },
+        {
+          "name": "AMAZON.StopIntent"
+        }
+      ],
+      "types": [],
+      "invocationName": "gemini relay"
+    }
+  }
+}
