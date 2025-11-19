@@ -1,121 +1,59 @@
-# lambda_function.py
 import os
-import logging
+import json
+import urllib.request
+import urllib.error
 
-from google import genai
-from key import GEMINI_API_KEY
-
-import ask_sdk_core.utils as ask_utils
-from ask_sdk_core.skill_builder import SkillBuilder
-from ask_sdk_core.dispatch_components import AbstractRequestHandler, AbstractExceptionHandler
-from ask_sdk_core.handler_input import HandlerInput
-from ask_sdk_model import Response
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 def call_gemini(prompt: str) -> str:
-    """Send the user's prompt to Gemini and return plain text."""
-    api_key = GEMINI_API_KEY
+    # Get API key from env var (preferred) or hard-code as a fallback
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    # Optionally: api_key = "YOUR_API_KEY_HERE"   # for quick testing only
+
     if not api_key:
-        logger.error("GEMINI_API_KEY is not set")
         return "Gemini API key is not configured."
 
+    url = f"{GEMINI_ENDPOINT}?key={api_key}"
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
     try:
-        client = genai.Client(api_key=api_key)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            resp_data = resp.read().decode("utf-8")
+        resp_json = json.loads(resp_data)
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
+        # Gemini responses look like: { "candidates": [ { "content": { "parts": [ { "text": "..." } ] } } ] }
+        candidates = resp_json.get("candidates", [])
+        if not candidates:
+            return "Gemini did not return any candidates."
 
-        text = getattr(response, "text", "") or ""
-        text = text.replace("<", " ").replace(">", " ").replace("&", " ").strip()
-        if not text:
-            return "Gemini did not return any text."
-        return text
+        content = candidates[0].get("content", {})
+        parts = content.get("parts", [])
+        if not parts:
+            return "Gemini returned an empty message."
 
+        text = parts[0].get("text", "").strip()
+        return text or "Gemini returned no text."
+
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        print("Gemini HTTP error:", e.code, body)
+        return "Gemini returned an error."
     except Exception as e:
-        logger.exception("Gemini request failed")
+        print("Gemini error:", repr(e))
         return "I couldn’t reach Gemini."
-
-
-class LaunchRequestHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input: HandlerInput) -> bool:
-        return ask_utils.is_request_type("LaunchRequest")(handler_input)
-
-    def handle(self, handler_input: HandlerInput) -> Response:
-        speak = "What would you like me to ask Gemini?"
-        return handler_input.response_builder.speak(speak).ask(speak).response
-
-
-class FreeQueryIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input: HandlerInput) -> bool:
-        return ask_utils.is_intent_name("FreeQueryIntent")(handler_input)
-
-    def handle(self, handler_input: HandlerInput) -> Response:
-        intent = handler_input.request_envelope.request.intent
-        q_slot = intent.slots.get("q") if intent and intent.slots else None
-        user_query = q_slot.value if q_slot and q_slot.value else None
-
-        if not user_query:
-            speak = "What should I send to Gemini?"
-            return handler_input.response_builder.speak(speak).ask(speak).response
-
-        reply = call_gemini(user_query)
-
-        # Simple heuristic: if short, keep session open
-        rb = handler_input.response_builder.speak(reply)
-        if len(reply) < 600:
-            rb = rb.ask("Would you like to ask Gemini anything else?")
-        return rb.response
-
-
-class HelpIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input: HandlerInput) -> bool:
-        return ask_utils.is_intent_name("AMAZON.HelpIntent")(handler_input)
-
-    def handle(self, handler_input: HandlerInput) -> Response:
-        speak = "Say, ask Gemini followed by your question."
-        return handler_input.response_builder.speak(speak).ask(speak).response
-
-
-class CancelOrStopIntentHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input: HandlerInput) -> bool:
-        return (
-            ask_utils.is_intent_name("AMAZON.CancelIntent")(handler_input)
-            or ask_utils.is_intent_name("AMAZON.StopIntent")(handler_input)
-        )
-
-    def handle(self, handler_input: HandlerInput) -> Response:
-        return handler_input.response_builder.speak("Goodbye.").response
-
-
-class SessionEndedRequestHandler(AbstractRequestHandler):
-    def can_handle(self, handler_input: HandlerInput) -> bool:
-        return ask_utils.is_request_type("SessionEndedRequest")(handler_input)
-
-    def handle(self, handler_input: HandlerInput) -> Response:
-        return handler_input.response_builder.response
-
-
-class CatchAllExceptionHandler(AbstractExceptionHandler):
-    def can_handle(self, handler_input, exception) -> bool:
-        return True
-
-    def handle(self, handler_input, exception) -> Response:
-        logger.exception("Unhandled error")
-        speak = "Sorry, something went wrong."
-        return handler_input.response_builder.speak(speak).ask("Try again?").response
-
-
-sb = SkillBuilder()
-sb.add_request_handler(LaunchRequestHandler())
-sb.add_request_handler(FreeQueryIntentHandler())
-sb.add_request_handler(HelpIntentHandler())
-sb.add_request_handler(CancelOrStopIntentHandler())
-sb.add_request_handler(SessionEndedRequestHandler())
-sb.add_exception_handler(CatchAllExceptionHandler())
-
-lambda_handler = sb.lambda_handler()
