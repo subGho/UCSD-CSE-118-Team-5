@@ -12,25 +12,50 @@ db = client["alexaDB"]                # database name (will be created automatic
 collection = db["weatherState"]       # collection name
 
 @app.route("/weather", methods=["POST"])
-def set_weather():
+def send_data():
     data = request.get_json(force=True, silent=True) or {}
     user_id = data.get("userId")
-    weather_speech = data.get("weatherSpeech")
+    door_status = data.get("doorStatus")
+    walk_through_status = data.get("walkThroughStatus")
+    indoor_temp = data.get("indoorTemp")
 
-    if not user_id or not weather_speech:
-        return jsonify({"error": "Need userId and weatherSpeech"}), 400
+    missing_fields = [
+        name for name, value in [
+            ("userId", user_id),
+            ("doorStatus", door_status),
+            ("walkThroughStatus", walk_through_status),
+            ("indoorTemp", indoor_temp),
+        ]
+        if value is None or (name == "userId" and not value)
+    ]
+
+    if missing_fields:
+        return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
 
     collection.update_one(
         {"userId": user_id},
-        {"$set": {"userId": user_id, "weatherSpeech": weather_speech}},
+        {
+            "$set": {
+                "userId": user_id,
+                "doorStatus": door_status,
+                "walkThroughStatus": walk_through_status,
+                "indoorTemp": indoor_temp,
+            }
+        },
         upsert=True
     )
 
-    return jsonify({"status": "ok", "userId": user_id, "weatherSpeech": weather_speech}), 200
+    return jsonify({
+        "status": "ok",
+        "userId": user_id,
+        "doorStatus": door_status,
+        "walkThroughStatus": walk_through_status,
+        "indoorTemp": indoor_temp,
+    }), 200
 
 
 @app.route("/weather", methods=["GET"])
-def get_weather():
+def get_data():
     user_id = request.args.get("userId", "default")
     doc = collection.find_one({"userId": user_id})
     if not doc:
@@ -38,7 +63,9 @@ def get_weather():
 
     return jsonify({
         "userId": doc["userId"],
-        "weatherSpeech": doc["weatherSpeech"]
+        "doorStatus": doc.get("doorStatus"),
+        "walkThroughStatus": doc.get("walkThroughStatus"),
+        "indoorTemp": doc.get("indoorTemp"),
     }), 200
 
 
