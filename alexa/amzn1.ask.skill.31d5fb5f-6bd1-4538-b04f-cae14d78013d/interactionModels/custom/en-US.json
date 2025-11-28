@@ -31,6 +31,13 @@
         {
           "name": "AMAZON.NavigateHomeIntent",
           "samples": []
+        },
+        {
+          "slots": [],
+          "name": "DoorStatusIntent",
+          "samples": [
+            "check door monitor"
+          ]
         }
       ],
       "types": [],
