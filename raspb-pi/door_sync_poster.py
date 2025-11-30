@@ -22,7 +22,6 @@ STD_DEV_HIGH = 5.0                    # What qualifies as "high" standard deviat
 EVENT_WINDOW_SEC = 2.0                # How long two events can be apart and still count together
 POST_COOLDOWN_SEC = 5.0               # Avoid duplicate posts too quickly
 SAMPLE_DELAY_SEC = 0.1                # Main loop sleep between samples
-IDLE_TIMEOUT_SEC = 5.0                # If nothing happens for this long, send idle/false POST
 
 POST_URL = "http://localhost:8000/weather"
 POST_PAYLOAD_OPEN = {
@@ -36,13 +35,6 @@ POST_PAYLOAD_CLOSED = {
     "userId": "subhon",
     "doorStatus": "Closed",
     "walkThroughStatus": "True",
-    "indoorTemp": "68",
-}
-
-POST_PAYLOAD_IDLE = {
-    "userId": "subhon",
-    "doorStatus": "Closed",
-    "walkThroughStatus": "False",
     "indoorTemp": "68",
 }
 
@@ -103,8 +95,6 @@ def main():
     walked_through_at = 0.0
     last_open_post_time = 0.0
     last_closed_post_time = 0.0
-    last_idle_post_time = 0.0
-    last_event_time = time.time()
     prev_door_opened = None
 
     try:
@@ -124,13 +114,11 @@ def main():
                         print(f"Door opened (distance {distance:.2f} cm, std {std_dev:.2f})")
                     door_opened = True
                     door_opened_at = time.time()
-                    last_event_time = door_opened_at
                 else:
                     if door_opened:
                         print(f"Door closed (distance {distance:.2f} cm, std {std_dev:.2f})")
                     door_opened = False
                     door_closed_at = time.time()
-                    last_event_time = door_closed_at
 
             beam_broken = GPIO.input(BREAKBEAM_PIN) == GPIO.LOW
             if beam_broken:
@@ -138,7 +126,6 @@ def main():
                     print("Beam broken")
                 walked_through = True
                 walked_through_at = time.time()
-                last_event_time = walked_through_at
             else:
                 now_check = time.time()
                 if walked_through and (now_check - walked_through_at) > EVENT_WINDOW_SEC:
@@ -156,12 +143,6 @@ def main():
             if door_recently_closed and walk_recent and (now - last_closed_post_time) >= POST_COOLDOWN_SEC:
                 if send_post(POST_PAYLOAD_CLOSED, "closed"):
                     last_closed_post_time = now
-
-            if (now - last_event_time) >= IDLE_TIMEOUT_SEC and (now - last_idle_post_time) >= POST_COOLDOWN_SEC:
-                idle_payload = dict(POST_PAYLOAD_IDLE)
-                idle_payload["doorStatus"] = "Open" if door_opened else "Closed"
-                if send_post(idle_payload, "idle"):
-                    last_idle_post_time = now
 
             time.sleep(SAMPLE_DELAY_SEC)
 
