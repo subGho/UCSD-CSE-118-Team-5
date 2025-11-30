@@ -30,43 +30,40 @@ def setup():
 
 def measure_distance():
     """Performs the distance measurement cycle."""
-    # 1. Clear the trigger pin (Sets the output to OFF)
+    # 1. Clear the trigger pin
     GPIO.output(TRIG_PIN, GPIO.LOW)
-    time.sleep(0.000002) # Delay for 2 microseconds (2/1,000,000 of a second)
+    time.sleep(0.00002)  # 20 µs just to be safe
 
     # 2. Send the 10 microsecond pulse
     GPIO.output(TRIG_PIN, GPIO.HIGH)
-    time.sleep(0.000010) # Delay for 10 microseconds
-    GPIO.output(TRIG_PIN, GPIO.LOW) # Sets the output to OFF again.
-    
-    # 3. Wait for the ECHO signal to go HIGH (Start time)
-    # The RPi.GPIO library doesn't have a direct pulseIn() equivalent,
-    # so we measure the duration manually using a loop/while.
-    pulse_start = time.time()
-    while GPIO.input(ECHO_PIN) == GPIO.LOW:
-        pulse_start = time.time()
-        # Add a timeout to prevent infinite loops if the sensor fails
-        if time.time() - pulse_start > 0.1:
-            return -1 # Return a negative value to indicate error
+    time.sleep(0.00001)  # 10 µs
+    GPIO.output(TRIG_PIN, GPIO.LOW)
 
-    # 4. Wait for the ECHO signal to go LOW (End time)
-    pulse_end = time.time()
+    # 3. Wait for ECHO to go HIGH (start time)
+    timeout = 0.1  # 100 ms timeout
+    start_wait = time.time()
+    while GPIO.input(ECHO_PIN) == GPIO.LOW:
+        if time.time() - start_wait > timeout:
+            # print("Timeout waiting for ECHO HIGH")
+            return -1  # error / timeout
+
+    pulse_start = time.time()
+
+    # 4. Wait for ECHO to go LOW (end time)
+    start_wait = time.time()
     while GPIO.input(ECHO_PIN) == GPIO.HIGH:
-        pulse_end = time.time()
-        # Add a timeout to prevent infinite loops
-        if time.time() - pulse_end > 0.1:
-            return -1 # Return a negative value to indicate error
+        if time.time() - start_wait > timeout:
+            # print("Timeout waiting for ECHO LOW")
+            return -1
+
+    pulse_end = time.time()
 
     # 5. Calculate duration and distance
     duration = pulse_end - pulse_start
-    # distance = (duration * 34300 cm/s) / 2
-    # The factor 0.0343 comes from (Speed of Sound in cm/µs)
-    # distance = (duration * 0.0343 cm/µs) / 2
-    # In Python, 'duration' is in seconds, so:
-    # distance = (duration * 34300) / 2  # 34300 cm/s
-    distance = (duration * 34300) / 2
-    
+    distance = (duration * 34300) / 2  # cm
+
     return distance
+
 
 def loop():
     """The main loop (equivalent to Arduino loop)."""
