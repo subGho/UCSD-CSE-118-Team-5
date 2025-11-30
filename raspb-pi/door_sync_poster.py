@@ -24,9 +24,16 @@ POST_COOLDOWN_SEC = 5.0               # Avoid duplicate posts too quickly
 SAMPLE_DELAY_SEC = 0.1                # Main loop sleep between samples
 
 POST_URL = "http://localhost:8000/weather"
-POST_PAYLOAD = {
+POST_PAYLOAD_OPEN = {
     "userId": "subhon",
     "doorStatus": "Open",
+    "walkThroughStatus": "True",
+    "indoorTemp": "68",
+}
+
+POST_PAYLOAD_CLOSED = {
+    "userId": "subhon",
+    "doorStatus": "Closed",
     "walkThroughStatus": "True",
     "indoorTemp": "68",
 }
@@ -67,14 +74,14 @@ def measure_distance():
     return distance
 
 
-def send_post():
+def send_post(payload, label):
     try:
-        resp = requests.post(POST_URL, json=POST_PAYLOAD, timeout=5)
+        resp = requests.post(POST_URL, json=payload, timeout=5)
         resp.raise_for_status()
-        print(f"POST sent. Response: {resp.status_code} {resp.text}")
+        print(f"POST ({label}) sent. Response: {resp.status_code} {resp.text}")
         return True
     except requests.exceptions.RequestException as exc:
-        print(f"Failed to send POST: {exc}")
+        print(f"Failed to send POST ({label}): {exc}")
         return False
 
 
@@ -84,8 +91,11 @@ def main():
     door_opened = False
     walked_through = False
     door_opened_at = 0.0
+    door_closed_at = 0.0
     walked_through_at = 0.0
-    last_post_time = 0.0
+    last_open_post_time = 0.0
+    last_closed_post_time = 0.0
+    prev_door_opened = None
 
     try:
         while True:
@@ -108,7 +118,7 @@ def main():
                     if door_opened:
                         print(f"Door closed (distance {distance:.2f} cm, std {std_dev:.2f})")
                     door_opened = False
-                    door_opened_at = time.time()
+                    door_closed_at = time.time()
 
             beam_broken = GPIO.input(BREAKBEAM_PIN) == GPIO.LOW
             if beam_broken:
@@ -117,15 +127,22 @@ def main():
                 walked_through = True
                 walked_through_at = time.time()
             else:
-                walked_through = False
+                now_check = time.time()
+                if walked_through and (now_check - walked_through_at) > EVENT_WINDOW_SEC:
+                    walked_through = False
 
             now = time.time()
             door_recent = door_opened and (now - door_opened_at) <= EVENT_WINDOW_SEC
             walk_recent = walked_through and (now - walked_through_at) <= EVENT_WINDOW_SEC
+            door_recently_closed = (not door_opened) and (now - door_closed_at) <= EVENT_WINDOW_SEC
 
-            if door_recent and walk_recent and (now - last_post_time) >= POST_COOLDOWN_SEC:
-                if send_post():
-                    last_post_time = now
+            if door_recent and walk_recent and (now - last_open_post_time) >= POST_COOLDOWN_SEC:
+                if send_post(POST_PAYLOAD_OPEN, "open"):
+                    last_open_post_time = now
+
+            if door_recently_closed and walk_recent and (now - last_closed_post_time) >= POST_COOLDOWN_SEC:
+                if send_post(POST_PAYLOAD_CLOSED, "closed"):
+                    last_closed_post_time = now
 
             time.sleep(SAMPLE_DELAY_SEC)
 
