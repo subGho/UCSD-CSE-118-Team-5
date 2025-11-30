@@ -19,19 +19,33 @@ BREAKBEAM_PIN = 22
 # Tuning parameters
 DISTANCE_THRESHOLD_CM = 35.0          # Distance that separates open/closed state
 STD_DEV_HIGH = 5.0                    # What qualifies as "high" standard deviation
-EVENT_WINDOW_SEC = 2.0                # How long two events can be apart and still count together
+EVENT_WINDOW_SEC = 5.0                # How long two events can be apart and still count together
 POST_COOLDOWN_SEC = 5.0               # Avoid duplicate posts too quickly
 SAMPLE_DELAY_SEC = 0.1                # Main loop sleep between samples
 
 POST_URL = "http://localhost:8000/weather"
-POST_PAYLOAD_OPEN = {
+POST_PAYLOAD_OPEN_NOT_WALKED = {
+    "userId": "subhon",
+    "doorStatus": "Open",
+    "walkThroughStatus": "False",
+    "indoorTemp": "68",
+}
+
+POST_PAYLOAD_OPEN_WALKED = {
     "userId": "subhon",
     "doorStatus": "Open",
     "walkThroughStatus": "True",
     "indoorTemp": "68",
 }
 
-POST_PAYLOAD_CLOSED = {
+POST_PAYLOAD_CLOSED_NOT_WALKED = {
+    "userId": "subhon",
+    "doorStatus": "Closed",
+    "walkThroughStatus": "False",
+    "indoorTemp": "68",
+}
+
+POST_PAYLOAD_CLOSED_WALKED = {
     "userId": "subhon",
     "doorStatus": "Closed",
     "walkThroughStatus": "True",
@@ -130,6 +144,12 @@ def main():
                 now_check = time.time()
                 if walked_through and (now_check - walked_through_at) > EVENT_WINDOW_SEC:
                     walked_through = False
+                    if door_opened:
+                        if send_post(POST_PAYLOAD_OPEN_NOT_WALKED, "open"):
+                            last_open_post_time = now
+                    else:
+                        if send_post(POST_PAYLOAD_CLOSED_NOT_WALKED, "closed"):
+                            last_closed_post_time = now
 
             now = time.time()
             door_recent = door_opened and (now - door_opened_at) <= EVENT_WINDOW_SEC
@@ -137,11 +157,11 @@ def main():
             door_recently_closed = (not door_opened) and (now - door_closed_at) <= EVENT_WINDOW_SEC
 
             if door_recent and walk_recent and (now - last_open_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_OPEN, "open"):
+                if send_post(POST_PAYLOAD_OPEN_WALKED, "open"):
                     last_open_post_time = now
 
             if door_recently_closed and walk_recent and (now - last_closed_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_CLOSED, "closed"):
+                if send_post(POST_PAYLOAD_CLOSED_WALKED, "closed"):
                     last_closed_post_time = now
 
             time.sleep(SAMPLE_DELAY_SEC)
