@@ -31,6 +31,7 @@ POST_PAYLOAD_OPEN_NOT_WALKED = {
     "doorStatus": "Open",
     "walkThroughStatus": "False",
     "indoorTemp": "68",
+    "humidity": "0",
 }
 
 POST_PAYLOAD_OPEN_WALKED = {
@@ -38,6 +39,7 @@ POST_PAYLOAD_OPEN_WALKED = {
     "doorStatus": "Open",
     "walkThroughStatus": "True",
     "indoorTemp": "68",
+    "humidity": "0",
 }
 
 POST_PAYLOAD_CLOSED_NOT_WALKED = {
@@ -45,6 +47,7 @@ POST_PAYLOAD_CLOSED_NOT_WALKED = {
     "doorStatus": "Closed",
     "walkThroughStatus": "False",
     "indoorTemp": "68",
+    "humidity": "0",
 }
 
 POST_PAYLOAD_CLOSED_WALKED = {
@@ -52,10 +55,12 @@ POST_PAYLOAD_CLOSED_WALKED = {
     "doorStatus": "Closed",
     "walkThroughStatus": "True",
     "indoorTemp": "68",
+    "humidity": "0",
 }
 
 dht_device = adafruit_dht.DHT11(board.D17)
 last_temp_f = None
+last_humidity = None
 
 
 def setup_gpio():
@@ -96,8 +101,11 @@ def measure_distance():
 def send_post(payload, label):
     payload = dict(payload)
     temp_f = read_temperature_f()
+    humidity = read_humidity()
     if temp_f is not None:
         payload["indoorTemp"] = f"{temp_f:.1f}"
+    if humidity is not None:
+        payload["humidity"] = f"{humidity:.0f}"
     try:
         resp = requests.post(POST_URL, json=payload, timeout=5)
         resp.raise_for_status()
@@ -121,6 +129,23 @@ def read_temperature_f():
     except RuntimeError as error:
         print(f"DHT read error: {error}")
         return last_temp_f
+    except Exception as error:
+        dht_device.exit()
+        raise
+
+
+def read_humidity():
+    """Read DHT11 humidity; returns last good value on transient errors."""
+    global last_humidity
+    try:
+        humidity = dht_device.humidity
+        if humidity is None:
+            return last_humidity
+        last_humidity = humidity
+        return humidity
+    except RuntimeError as error:
+        print(f"DHT humidity read error: {error}")
+        return last_humidity
     except Exception as error:
         dht_device.exit()
         raise
