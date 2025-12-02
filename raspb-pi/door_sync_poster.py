@@ -8,6 +8,8 @@ import statistics
 import time
 from collections import deque
 
+import adafruit_dht
+import board
 import requests
 import RPi.GPIO as GPIO
 
@@ -52,6 +54,9 @@ POST_PAYLOAD_CLOSED_WALKED = {
     "indoorTemp": "68",
 }
 
+dht_device = adafruit_dht.DHT11(board.D17)
+last_temp_f = None
+
 
 def setup_gpio():
     GPIO.setmode(GPIO.BCM)
@@ -89,6 +94,10 @@ def measure_distance():
 
 
 def send_post(payload, label):
+    payload = dict(payload)
+    temp_f = read_temperature_f()
+    if temp_f is not None:
+        payload["indoorTemp"] = f"{temp_f:.1f}"
     try:
         resp = requests.post(POST_URL, json=payload, timeout=5)
         resp.raise_for_status()
@@ -97,6 +106,24 @@ def send_post(payload, label):
     except requests.exceptions.RequestException as exc:
         print(f"Failed to send POST ({label}): {exc}")
         return False
+
+
+def read_temperature_f():
+    """Read DHT11 temperature in Fahrenheit; returns last good value on transient errors."""
+    global last_temp_f
+    try:
+        temp_c = dht_device.temperature
+        if temp_c is None:
+            return last_temp_f
+        temp_f = temp_c * (9 / 5) + 32
+        last_temp_f = temp_f
+        return temp_f
+    except RuntimeError as error:
+        print(f"DHT read error: {error}")
+        return last_temp_f
+    except Exception as error:
+        dht_device.exit()
+        raise
 
 
 def main():
