@@ -18,6 +18,7 @@ def send_data():
     door_status = data.get("doorStatus")
     walk_through_status = data.get("walkThroughStatus")
     indoor_temp = data.get("indoorTemp")
+    humidity = data.get("humidity")
 
     missing_fields = [
         name for name, value in [
@@ -25,6 +26,7 @@ def send_data():
             ("doorStatus", door_status),
             ("walkThroughStatus", walk_through_status),
             ("indoorTemp", indoor_temp),
+            ("humidity", humidity),
         ]
         if value is None or (name == "userId" and not value)
     ]
@@ -40,6 +42,7 @@ def send_data():
                 "doorStatus": door_status,
                 "walkThroughStatus": walk_through_status,
                 "indoorTemp": indoor_temp,
+                "humidity": humidity,
             }
         },
         upsert=True
@@ -51,6 +54,7 @@ def send_data():
         "doorStatus": door_status,
         "walkThroughStatus": walk_through_status,
         "indoorTemp": indoor_temp,
+        "humidity": humidity,
     }), 200
 
 
@@ -66,6 +70,7 @@ def get_data():
         "doorStatus": doc.get("doorStatus"),
         "walkThroughStatus": doc.get("walkThroughStatus"),
         "indoorTemp": doc.get("indoorTemp"),
+        "humidity": doc.get("humidity"),
     }), 200
 
 
