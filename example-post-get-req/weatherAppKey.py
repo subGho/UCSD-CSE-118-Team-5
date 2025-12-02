@@ -1,1 +1,0 @@
-mongo_uri = "mongodb+srv://testuser:test12345@alexacluster.hmpbrep.mongodb.net/?appName=alexaCluster"
