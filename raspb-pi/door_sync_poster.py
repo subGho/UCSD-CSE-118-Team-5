@@ -63,6 +63,60 @@ last_temp_f = None
 last_humidity = None
 
 
+def build_proactive_event(message):
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "referenceId": str(uuid.uuid4()),
+        "expiryTime": "2099-12-31T23:59:59Z",
+
+        "event": {
+            "name": "AMAZON.MessageAlert.Activated",
+            "payload": {
+                "state": {"status": "UNREAD", "freshness": "NEW"},
+                "messageGroup": {
+                    "creator": {"name": "Python Script"},
+                    "count": 1
+                }
+            }
+        },
+
+        "localizedAttributes": [
+            {
+                "locale": "en-US",
+                "providerName": "Python Script",
+                "message": message
+            }
+        ],
+
+        "relevantAudience": {
+            "type": "Unicast",
+            "payload": {"user": ALEXA_USER_ID}
+        }
+    }
+
+def send_event(payload, label):
+
+    payload = dict(payload)
+    temp_f = read_temperature_f()
+    humidity = read_humidity()
+    if temp_f is not None:
+        payload["indoorTemp"] = f"{temp_f:.1f}"
+    if humidity is not None:
+        payload["humidity"] = f"{humidity:.0f}"
+    token = #PLACE ACCESS TOKEN IN HERE 
+    event = build_proactive_event(str(payload))
+
+    url = "https://api.amazonalexa.com/v1/proactiveEvents/stages/production"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
+    response = requests.post(url, json=event, headers=headers)
+    print("Status:", response.status_code)
+    print("Response:", response.text)
+
+
 def setup_gpio():
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(TRIG_PIN, GPIO.OUT)
@@ -209,12 +263,19 @@ def main():
             door_recently_closed = (not door_opened) and (now - door_closed_at) <= EVENT_WINDOW_SEC
 
             if door_recent and walk_recent and (now - last_open_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_OPEN_WALKED, "open"):
+                # if send_post(POST_PAYLOAD_OPEN_WALKED, "open"):
+                #     last_open_post_time = now
+
+                if send_event(POST_PAYLOAD_OPEN_WALKED, "open"):
                     last_open_post_time = now
 
             if door_recently_closed and walk_recent and (now - last_closed_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_CLOSED_WALKED, "closed"):
+                # if send_post(POST_PAYLOAD_CLOSED_WALKED, "closed"):
+                #     last_closed_post_time = now
+
+                 if send_event(POST_PAYLOAD_CLOSED_WALKED,, "closed"):
                     last_closed_post_time = now
+
 
             time.sleep(SAMPLE_DELAY_SEC)
 
