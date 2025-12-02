@@ -1,11 +1,10 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
-import os
+
+from weatherAppKey import mongo_uri
 
 app = Flask(__name__)
 
-# mongo_uri = os.environ["MONGODB_URI"]  # make sure this is set
-mongo_uri = "mongodb+srv://testuser:test12345@alexacluster.hmpbrep.mongodb.net/?appName=alexaCluster"
 client = MongoClient(mongo_uri)
 
 db = client["alexaDB"]                # database name (will be created automatically)
