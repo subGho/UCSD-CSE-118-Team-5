@@ -3,6 +3,7 @@ import logging
 import urllib.request
 import urllib.error
 import urllib.parse
+import time
 
 from ask_sdk_core.skill_builder import SkillBuilder
 from ask_sdk_core.utils import is_request_type, is_intent_name
@@ -123,7 +124,7 @@ def launch_request_handler(handler_input: HandlerInput):
         .response
     )
     
-@sb.request_handler(can_handle_func=is_request_type("GetCalendarSummaryIntent"))
+@sb.request_handler(can_handle_func=is_intent_name("GetCalendarSummaryIntent"))
 def launch_request_handler(handler_input: HandlerInput):
     summary = summarize_calendar_with_gemini()
     return (
@@ -137,24 +138,28 @@ def launch_request_handler(handler_input: HandlerInput):
 def door_status_handler(handler_input: HandlerInput):
     """Respond with the latest door status from MongoDB via your Flask API."""
     try:
-        data = fetch_door_data("subhon")  # hard-coded user for now
-
-        door = data.get("doorStatus", "unknown")
-        walked = data.get("walkThroughStatus", "unknown")
-        temp = data.get("indoorTemp", "unknown")
-
-        if walked == "True":
-            walked_phrase = "You recently walked through the door."
-        elif walked == "False":
-            walked_phrase = "You have not walked through the door yet."
-        else:
-            walked_phrase = "I'm not sure if you've walked through the door."
-
-        speak_output = (
-            f"The door is currently {door}. "
-            f"{walked_phrase} "
-            f"The indoor temperature is {temp} degrees."
-        )
+        while True:
+            data = fetch_door_data("subhon")  # hard-coded user for now
+            door = data.get("doorStatus", "unknown")
+            walked = data.get("walkThroughStatus", "unknown")
+            temp = data.get("indoorTemp", "unknown")
+            logger.info(f"{door}, {walked}, {temp}")
+            if walked == "True":
+                walked_phrase = "You recently walked through the door."
+            elif walked == "False":
+                walked_phrase = "You have not walked through the door yet."
+            else:
+                walked_phrase = "I'm not sure if you've walked through the door."
+            if walked == "True":
+                logger.info("Walked through door, break")
+                speak_output = (
+                    f"The door is currently {door}. "
+                    f"{walked_phrase} "
+                    f"The indoor temperature is {temp} degrees."
+                )
+                break
+            time.sleep(5)
+            
 
     except Exception as e:
         logger.exception(f"Error in door_status_handler: {e}")
