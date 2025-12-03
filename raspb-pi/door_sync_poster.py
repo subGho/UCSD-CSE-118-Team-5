@@ -63,6 +63,19 @@ last_temp_f = None
 last_humidity = None
 
 
+
+def get_access_token():
+    url = "https://api.amazon.com/auth/O2/token"
+    payload = {
+        "grant_type": "client_credentials",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "scope": "alexa::devices:all:notifications:write"
+    }
+    res = requests.post(url, data=payload)
+    res.raise_for_status()
+    return res.json()["access_token"]
+
 def build_proactive_event(message):
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -103,7 +116,7 @@ def send_event(payload, label):
         payload["indoorTemp"] = f"{temp_f:.1f}"
     if humidity is not None:
         payload["humidity"] = f"{humidity:.0f}"
-    token = #PLACE ACCESS TOKEN IN HERE 
+    token = get_access_token()
     event = build_proactive_event(str(payload))
 
     url = "https://api.amazonalexa.com/v1/proactiveEvents/stages/production"
