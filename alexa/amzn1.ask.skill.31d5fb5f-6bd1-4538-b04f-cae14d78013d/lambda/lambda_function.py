@@ -104,14 +104,69 @@ def summarize_calendar_with_gemini():
         return "I couldn't retrieve your schedule summary due to an error."
         
    
-
-
 # ---------------------------------------------------------
-# Alexa Handlers
+# NEW HANDLER: Messaging API Receiver
 # ---------------------------------------------------------
 
+@sb.request_handler(
+    can_handle_func=is_request_type("CustomInterfaceController.Events.CustomInterfaceMessage")
+)
+def messaging_api_handler(handler_input: HandlerInput):
+    """
+    Handles messages pushed to the skill via the Alexa Messaging API (Push Notifications).
+    Only processes messages with type "DOOR_EVENT".
+    """
+    
+    request_attributes = handler_input.request_envelope.request.custom_interface_message_request
+    message = request_attributes.message
+
+    # The Flask server sends a message like: {"type": "DOOR_EVENT", "status": "open"}
+    message_type = message.get("type", "UNKNOWN")
+    
+    logger.info(f"Received Custom Interface Message: {message}")
+
+    if message_type == "DOOR_EVENT":
+        # Process the door event: fetch the latest data from the Flask API
+        try:
+            data = fetch_door_data("subhon")
+            door = data.get("doorStatus", "unknown")
+            temp = data.get("indoorTemp", "unknown")
+            walked = data.get("walkThroughStatus", "unknown")
+
+            # Customize the response based on the fetched data
+            if walked == "True":
+                walked_phrase = "Someone just walked through."
+            else:
+                walked_phrase = "The door status changed."
+            
+            speak_output = (
+                f"🚨 **Door Monitor Alert**: The door is now {door}. "
+                f"{walked_phrase} "
+                f"The indoor temperature is {temp} degrees."
+            )
+        except Exception as e:
+            logger.exception(f"Error fetching data after push: {e}")
+            speak_output = "I received a door alert, but I couldn't fetch the details."
+            
+    else:
+        # If any other message type is received (e.g., CALENDAR_UPDATE, UNKNOWN), 
+        # the skill will not speak the full message, avoiding unsolicited calendar reading.
+        speak_output = f"I received a silent message from the server of type {message_type}. If you need the calendar, please ask for it."
+
+    # Send the response back to Alexa to be spoken
+    return (
+        handler_input.response_builder
+        .speak(speak_output)
+        .set_should_end_session(True) 
+        .response
+    )
+
+# ---------------------------------------------------------
+# Alexa Handlers (Without constant polling loop)
+# ---------------------------------------------------------
 @sb.request_handler(can_handle_func=is_request_type("LaunchRequest"))
 def launch_request_handler(handler_input: HandlerInput):
+    # ... (remains the same) ...
     speak_output = (
         "Welcome, You can say  'summarize my calendar' "
         "or 'check door monitor'. What would you like to do?"
@@ -125,7 +180,8 @@ def launch_request_handler(handler_input: HandlerInput):
     )
     
 @sb.request_handler(can_handle_func=is_intent_name("GetCalendarSummaryIntent"))
-def launch_request_handler(handler_input: HandlerInput):
+def get_calendar_summary_handler(handler_input: HandlerInput):
+    # Intent name changed for clarity, but logic remains the same
     summary = summarize_calendar_with_gemini()
     return (
         handler_input.response_builder
@@ -136,30 +192,27 @@ def launch_request_handler(handler_input: HandlerInput):
     
 @sb.request_handler(can_handle_func=is_intent_name("DoorStatusIntent"))
 def door_status_handler(handler_input: HandlerInput):
-    """Respond with the latest door status from MongoDB via your Flask API."""
+    """Responds with the latest door status from MongoDB via your Flask API (no polling)."""
     try:
-        while True:
-            data = fetch_door_data("subhon")  # hard-coded user for now
-            door = data.get("doorStatus", "unknown")
-            walked = data.get("walkThroughStatus", "unknown")
-            temp = data.get("indoorTemp", "unknown")
-            logger.info(f"{door}, {walked}, {temp}")
-            if walked == "True":
-                walked_phrase = "You recently walked through the door."
-            elif walked == "False":
-                walked_phrase = "You have not walked through the door yet."
-            else:
-                walked_phrase = "I'm not sure if you've walked through the door."
-            if walked == "True":
-                logger.info("Walked through door, break")
-                speak_output = (
-                    f"The door is currently {door}. "
-                    f"{walked_phrase} "
-                    f"The indoor temperature is {temp} degrees."
-                )
-                break
-            time.sleep(5)
-            
+        # Revert to the original, non-polling logic
+        data = fetch_door_data("subhon")
+        
+        door = data.get("doorStatus", "unknown")
+        walked = data.get("walkThroughStatus", "unknown")
+        temp = data.get("indoorTemp", "unknown")
+        
+        if walked == "True":
+            walked_phrase = "You recently walked through the door."
+        elif walked == "False":
+            walked_phrase = "You have not walked through the door yet."
+        else:
+            walked_phrase = "I'm not sure if you've walked through the door."
+
+        speak_output = (
+            f"The door is currently {door}. "
+            f"{walked_phrase} "
+            f"The indoor temperature is {temp} degrees."
+        )
 
     except Exception as e:
         logger.exception(f"Error in door_status_handler: {e}")
