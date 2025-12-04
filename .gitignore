@@ -9,3 +9,7 @@ example-post-get-req/weatherAppKey.py
 google-calendar/credentials.json
 google-calendar/google-cal-venv
 google-calendar/token.json
+raspb-pi/token.json
+raspb-pi/credentials.json
+.env
+raspb-pi/pyvenv.cfg
