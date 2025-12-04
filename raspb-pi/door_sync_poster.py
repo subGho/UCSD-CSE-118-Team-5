@@ -5,8 +5,10 @@ then POST to weatherApp when both are true within a short time window.
 """
 
 import statistics
+import sys
 import time
 from collections import deque
+from pathlib import Path
 
 import adafruit_dht
 import board
@@ -26,6 +28,7 @@ POST_COOLDOWN_SEC = 5.0               # Avoid duplicate posts too quickly
 SAMPLE_DELAY_SEC = 0.1                # Main loop sleep between samples
 DOOR_STABILITY_COUNT = 3              # Number of consistent readings to accept a door state change
 DOOR_TRANSITION_COOLDOWN_SEC = 1.0    # Minimum time between door state changes
+CALENDAR_REFRESH_SEC = 600            # Refresh calendar events every 10 minutes
 
 POST_URL = "http://localhost:8000/weather"
 POST_PAYLOAD_OPEN_NOT_WALKED = {
@@ -65,6 +68,10 @@ VSH_URL = "https://www.virtualsmarthome.xyz/url_routine_trigger/activate.php?tri
 dht_device = adafruit_dht.DHT11(board.D17)
 last_temp_f = None
 last_humidity = None
+gcal_module = None
+gcal_service = None
+gcal_events_cache = []
+gcal_last_fetch = 0.0
 
 
 def setup_gpio():
@@ -102,19 +109,23 @@ def measure_distance():
     return distance
 
 
-def send_post(payload, label):
+def send_post(payload, label, trigger=False):
     payload = dict(payload)
     temp_f = read_temperature_f()
     humidity = read_humidity()
+    calendar_events = get_calendar_events()
     if temp_f is not None:
         payload["indoorTemp"] = f"{temp_f:.1f}"
     if humidity is not None:
         payload["humidity"] = f"{humidity:.0f}"
+    if calendar_events:
+        payload["calendarEvents"] = calendar_events
     try:
         resp = requests.post(POST_URL, json=payload, timeout=5)
         resp.raise_for_status()
         print(f"POST ({label}) sent. Response: {resp.status_code} {resp.text}")
-        trigger_alexa_routine()
+        if trigger:
+            trigger_alexa_routine()
         return True
     except requests.exceptions.RequestException as exc:
         print(f"Failed to send POST ({label}): {exc}")
@@ -154,6 +165,47 @@ def read_humidity():
     except Exception as error:
         dht_device.exit()
         raise
+
+
+def load_calendar_module():
+    """Load the google_calendar_events helper from the repo; returns module or None."""
+    global gcal_module
+    if gcal_module is not None:
+        return gcal_module
+    try:
+        repo_root = Path(__file__).resolve().parents[1]
+        gcal_dir = repo_root / "google-calendar"
+        if str(gcal_dir) not in sys.path:
+            sys.path.append(str(gcal_dir))
+        import google_calendar_events as gcal
+
+        gcal_module = gcal
+    except Exception as exc:
+        print(f"Google Calendar module load failed: {exc}")
+        gcal_module = None
+    return gcal_module
+
+
+def get_calendar_events():
+    """Fetch today's events with caching to avoid hammering the API."""
+    global gcal_service, gcal_events_cache, gcal_last_fetch
+    module = load_calendar_module()
+    if module is None:
+        return gcal_events_cache
+
+    now = time.time()
+    try:
+        if gcal_service is None:
+            creds = module.get_credentials()
+            gcal_service = module.build("calendar", "v3", credentials=creds)
+
+        if (now - gcal_last_fetch) >= CALENDAR_REFRESH_SEC:
+            gcal_events_cache = module.get_events_for_today(gcal_service)
+            gcal_last_fetch = now
+    except Exception as exc:
+        print(f"Google Calendar fetch failed: {exc}")
+
+    return gcal_events_cache
 
 
 def trigger_alexa_routine():
@@ -235,7 +287,8 @@ def main():
 
             payload_signature = (label, payload["doorStatus"], payload["walkThroughStatus"])
             if (now - last_post_time) >= POST_COOLDOWN_SEC and payload_signature != last_payload_signature:
-                if send_post(payload, label):
+                should_trigger = payload["doorStatus"] == "Open" and payload["walkThroughStatus"] == "True"
+                if send_post(payload, label, trigger=should_trigger):
                     last_post_time = now
                     last_payload_signature = payload_signature
 

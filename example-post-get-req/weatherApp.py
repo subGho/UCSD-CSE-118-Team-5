@@ -18,6 +18,7 @@ def send_data():
     walk_through_status = data.get("walkThroughStatus")
     indoor_temp = data.get("indoorTemp")
     humidity = data.get("humidity")
+    calendar_events = data.get("calendarEvents")
 
     missing_fields = [
         name for name, value in [
@@ -42,6 +43,7 @@ def send_data():
                 "walkThroughStatus": walk_through_status,
                 "indoorTemp": indoor_temp,
                 "humidity": humidity,
+                "calendarEvents": calendar_events,
             }
         },
         upsert=True
@@ -54,6 +56,7 @@ def send_data():
         "walkThroughStatus": walk_through_status,
         "indoorTemp": indoor_temp,
         "humidity": humidity,
+        "calendarEvents": calendar_events,
     }), 200
 
 
@@ -70,6 +73,7 @@ def get_data():
         "walkThroughStatus": doc.get("walkThroughStatus"),
         "indoorTemp": doc.get("indoorTemp"),
         "humidity": doc.get("humidity"),
+        "calendarEvents": doc.get("calendarEvents"),
     }), 200
 
 
