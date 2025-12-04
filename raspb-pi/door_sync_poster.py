@@ -24,6 +24,8 @@ STD_DEV_HIGH = 5.0                    # What qualifies as "high" standard deviat
 EVENT_WINDOW_SEC = 5.0                # How long two events can be apart and still count together
 POST_COOLDOWN_SEC = 5.0               # Avoid duplicate posts too quickly
 SAMPLE_DELAY_SEC = 0.1                # Main loop sleep between samples
+DOOR_STABILITY_COUNT = 3              # Number of consistent readings to accept a door state change
+DOOR_TRANSITION_COOLDOWN_SEC = 1.0    # Minimum time between door state changes
 
 POST_URL = "http://localhost:8000/weather"
 POST_PAYLOAD_OPEN_NOT_WALKED = {
@@ -167,14 +169,14 @@ def trigger_alexa_routine():
 def main():
     setup_gpio()
     distance_history = deque(maxlen=15)
-    door_opened = False
+    stable_door_state = "closed"
+    candidate_state = None
+    candidate_count = 0
+    last_state_change_time = 0.0
     walked_through = False
-    door_opened_at = 0.0
-    door_closed_at = 0.0
     walked_through_at = 0.0
-    last_open_post_time = 0.0
-    last_closed_post_time = 0.0
-    prev_door_opened = None
+    last_post_time = 0.0
+    last_payload_signature = None
 
     try:
         while True:
@@ -187,47 +189,55 @@ def main():
             else:
                 std_dev = 0.0
 
+            now = time.time()
+
+            new_state = None
             if std_dev >= STD_DEV_HIGH and distance > 0:
-                if distance > DISTANCE_THRESHOLD_CM:
-                    if not door_opened:
-                        print(f"Door opened (distance {distance:.2f} cm, std {std_dev:.2f})")
-                    door_opened = True
-                    door_opened_at = time.time()
+                new_state = "open" if distance > DISTANCE_THRESHOLD_CM else "closed"
+
+            if new_state:
+                if new_state == candidate_state:
+                    candidate_count += 1
                 else:
-                    if door_opened:
-                        print(f"Door closed (distance {distance:.2f} cm, std {std_dev:.2f})")
-                    door_opened = False
-                    door_closed_at = time.time()
+                    candidate_state = new_state
+                    candidate_count = 1
+
+                if (
+                    candidate_count >= DOOR_STABILITY_COUNT
+                    and new_state != stable_door_state
+                    and (now - last_state_change_time) >= DOOR_TRANSITION_COOLDOWN_SEC
+                ):
+                    stable_door_state = new_state
+                    last_state_change_time = now
+                    print(f"Door state stabilized: {stable_door_state} (distance {distance:.2f} cm, std {std_dev:.2f})")
+            else:
+                candidate_state = None
+                candidate_count = 0
 
             beam_broken = GPIO.input(BREAKBEAM_PIN) == GPIO.LOW
             if beam_broken:
                 if not walked_through:
                     print("Beam broken")
                 walked_through = True
-                walked_through_at = time.time()
+                walked_through_at = now
             else:
-                now_check = time.time()
-                if walked_through and (now_check - walked_through_at) > EVENT_WINDOW_SEC:
+                if walked_through and (now - walked_through_at) > EVENT_WINDOW_SEC:
                     walked_through = False
-                    if door_opened:
-                        if send_post(POST_PAYLOAD_OPEN_NOT_WALKED, "open"):
-                            last_open_post_time = now
-                    else:
-                        if send_post(POST_PAYLOAD_CLOSED_NOT_WALKED, "closed"):
-                            last_closed_post_time = now
 
-            now = time.time()
-            door_recent = door_opened and (now - door_opened_at) <= EVENT_WINDOW_SEC
             walk_recent = walked_through and (now - walked_through_at) <= EVENT_WINDOW_SEC
-            door_recently_closed = (not door_opened) and (now - door_closed_at) <= EVENT_WINDOW_SEC
 
-            if door_recent and walk_recent and (now - last_open_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_OPEN_WALKED, "open"):
-                    last_open_post_time = now
+            if stable_door_state == "open":
+                payload = POST_PAYLOAD_OPEN_WALKED if walk_recent else POST_PAYLOAD_OPEN_NOT_WALKED
+                label = "open_walk" if walk_recent else "open"
+            else:
+                payload = POST_PAYLOAD_CLOSED_WALKED if walk_recent else POST_PAYLOAD_CLOSED_NOT_WALKED
+                label = "closed_walk" if walk_recent else "closed"
 
-            if door_recently_closed and walk_recent and (now - last_closed_post_time) >= POST_COOLDOWN_SEC:
-                if send_post(POST_PAYLOAD_CLOSED_WALKED, "closed"):
-                    last_closed_post_time = now
+            payload_signature = (label, payload["doorStatus"], payload["walkThroughStatus"])
+            if (now - last_post_time) >= POST_COOLDOWN_SEC and payload_signature != last_payload_signature:
+                if send_post(payload, label):
+                    last_post_time = now
+                    last_payload_signature = payload_signature
 
             time.sleep(SAMPLE_DELAY_SEC)
 
