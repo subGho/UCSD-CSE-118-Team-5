@@ -58,6 +58,8 @@ POST_PAYLOAD_CLOSED_WALKED = {
     "humidity": "0",
 }
 
+VSH_URL = "https://www.virtualsmarthome.xyz/url_routine_trigger/activate.php?trigger=110aeef9-cc0b-43af-9ddc-a64dd6a1b79c&token=bcfb8f78-72cd-473f-920e-979a43c66d57&response=html"
+
 dht_device = adafruit_dht.DHT11(board.D17)
 last_temp_f = None
 last_humidity = None
@@ -110,6 +112,7 @@ def send_post(payload, label):
         resp = requests.post(POST_URL, json=payload, timeout=5)
         resp.raise_for_status()
         print(f"POST ({label}) sent. Response: {resp.status_code} {resp.text}")
+        trigger_alexa_routine()
         return True
     except requests.exceptions.RequestException as exc:
         print(f"Failed to send POST ({label}): {exc}")
@@ -149,6 +152,16 @@ def read_humidity():
     except Exception as error:
         dht_device.exit()
         raise
+
+
+def trigger_alexa_routine():
+    """Trigger Alexa routine via Virtual Smart Home URL."""
+    try:
+        resp = requests.get(VSH_URL, timeout=3)
+        resp.raise_for_status()
+        print("Triggered Alexa routine successfully.")
+    except Exception as exc:
+        print(f"Failed to trigger Alexa routine: {exc}")
 
 
 def main():
