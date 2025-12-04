@@ -6,3 +6,6 @@ example-post-get-req/test_venv/
 raspb-pi/local-venv
 example-post-get-req/localhost-venv
 example-post-get-req/weatherAppKey.py
+google-calendar/credentials.json
+google-calendar/google-cal-venv
+google-calendar/token.json
