@@ -9,6 +9,7 @@ from ask_sdk_core.skill_builder import SkillBuilder
 from ask_sdk_core.utils import is_request_type, is_intent_name
 from ask_sdk_core.handler_input import HandlerInput
 from ask_sdk_model import Response
+from datetime import datetime, timedelta
 from key import GEMINI_API_KEY
 
 sb = SkillBuilder()
@@ -21,20 +22,7 @@ GEMINI_URL = (
     f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 )
 
-# -----------------------------
-# Hardcoded text-based calendar
-# -----------------------------
-CALENDAR_TEXT = """
-TODAY
-- 10:00 AM – SWE Board Meeting
-- 2:00 PM – CSE 118 Lecture
-- 3:30 PM – CSE 118 Lab
-- 5:00 PM – Study Session
-
-"""
-
 DOOR_API_BASE_URL = "https://deliberative-michell-nonloyal.ngrok-free.dev"
-    # you can later move this into an env var if you want
 
 def fetch_door_data(user_id: str = "subhon") -> dict:
     """Call your Flask /weather endpoint and return the JSON as a dict."""
@@ -57,12 +45,15 @@ def summarize_calendar_with_gemini():
     if not GEMINI_API_KEY:
         logger.error("Gemini API key missing.")
         return "Your schedule summary is unavailable because the API key is missing."
+        
+    data = fetch_door_data()
+    calEvents = data.get("calendarEvents")
 
     prompt = (
-        "You are an assistant that summarizes schedules. "
-        "Given the following day calendar, create a clear, friendly spoken summary "
+        "You are an assistant that summarizes schedules"
+        "Given the following day calendar, create a clear, friendly spoken summary, no greeting is needed for the user "
         "of the main events, commitments, and patterns. Keep it short and natural.\n\n"
-        f"{CALENDAR_TEXT}"
+        f"{calEvents}"
     )
 
     body = {
@@ -103,13 +94,10 @@ def summarize_calendar_with_gemini():
         logger.exception("Gemini request failed: %s", e)
         return "I couldn't retrieve your schedule summary due to an error."
         
-   
-
 
 # ---------------------------------------------------------
 # Alexa Handlers
 # ---------------------------------------------------------
-
 @sb.request_handler(can_handle_func=is_request_type("LaunchRequest"))
 def launch_request_handler(handler_input: HandlerInput):
     speak_output = (
@@ -117,15 +105,31 @@ def launch_request_handler(handler_input: HandlerInput):
         "or 'check door monitor'. What would you like to do?"
     )
     
+    data = fetch_door_data()
+
+    door = data.get("doorStatus")
+    walk = data.get("walkThroughStatus")
+    temp = data.get("indoorTemp")
+    humidity = data.get("humidity")
+    
+    now = (datetime.now() - timedelta(hours=8)).strftime("%I:%M %p").lstrip("0")
+
+    speak_output = (
+        f"Hello! "
+        f"The time is currently {now}. "
+        f"The indoor temperature is {temp} degrees and the humidity is {humidity}%. "
+        "Would you like to continue to your calendar summary?"
+    )
+    
     return (
         handler_input.response_builder
         .speak(speak_output)
-        .ask("You can say 'summarize my calendar' or 'check door monitor'.")
+        .ask("You can say 'yes summarize my calendar' or 'no skip calendar'.")
         .response
     )
     
 @sb.request_handler(can_handle_func=is_intent_name("GetCalendarSummaryIntent"))
-def launch_request_handler(handler_input: HandlerInput):
+def get_calendar_summary_handler(handler_input: HandlerInput):
     summary = summarize_calendar_with_gemini()
     return (
         handler_input.response_builder
@@ -134,43 +138,9 @@ def launch_request_handler(handler_input: HandlerInput):
         .response
     )
     
-@sb.request_handler(can_handle_func=is_intent_name("DoorStatusIntent"))
+@sb.request_handler(can_handle_func=is_intent_name("SkipCalendarIntent"))
 def door_status_handler(handler_input: HandlerInput):
-    """Respond with the latest door status from MongoDB via your Flask API."""
-    try:
-        while True:
-            data = fetch_door_data("subhon")  # hard-coded user for now
-            door = data.get("doorStatus", "unknown")
-            walked = data.get("walkThroughStatus", "unknown")
-            temp = data.get("indoorTemp", "unknown")
-            logger.info(f"{door}, {walked}, {temp}")
-            if walked == "True":
-                walked_phrase = "You recently walked through the door."
-            elif walked == "False":
-                walked_phrase = "You have not walked through the door yet."
-            else:
-                walked_phrase = "I'm not sure if you've walked through the door."
-            if walked == "True":
-                logger.info("Walked through door, break")
-                speak_output = (
-                    f"The door is currently {door}. "
-                    f"{walked_phrase} "
-                    f"The indoor temperature is {temp} degrees."
-                )
-                break
-            time.sleep(5)
-            
-
-    except Exception as e:
-        logger.exception(f"Error in door_status_handler: {e}")
-        speak_output = "Sorry, I couldn't get the latest door information."
-
-    return (
-        handler_input.response_builder
-        .speak(speak_output)
-        .set_should_end_session(True)
-        .response
-    )
+    return handler_input.response_builder.speak("Ok I will skip your calendar summary").set_should_end_session(True).response
 
 
 @sb.request_handler(can_handle_func=is_intent_name("AMAZON.HelpIntent"))

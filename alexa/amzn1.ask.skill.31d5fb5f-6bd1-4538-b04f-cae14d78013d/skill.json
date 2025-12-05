@@ -27,6 +27,11 @@
       }
     },
     "manifestVersion": "1.0",
+    "permissions": [
+      {
+        "name": "alexa::alerts:reminders:skill:readwrite"
+      }
+    ],
     "publishingInformation": {
       "category": "KNOWLEDGE_AND_TRIVIA",
       "distributionCountries": [],

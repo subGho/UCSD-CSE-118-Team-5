@@ -6,6 +6,8 @@
           "slots": [],
           "name": "GetCalendarSummaryIntent",
           "samples": [
+            "yes",
+            "Yes summarize my calendar",
             "give me my schedule summary",
             "summarize my calendar",
             "what\u0027s on my schedule",
@@ -34,9 +36,11 @@
         },
         {
           "slots": [],
-          "name": "DoorStatusIntent",
+          "name": "SkipCalendarIntent",
           "samples": [
-            "check door monitor"
+            "skip calendar",
+            "no",
+            "no calendar"
           ]
         }
       ],
